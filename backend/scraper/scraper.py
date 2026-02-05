@@ -66,14 +66,23 @@ def scrape_attendance(roll_no, password, year_idx=0, semester_idx=0, captcha_sol
         pwd_input.send_keys(password)
         
         # Step 3: Handle CAPTCHA
+        # Step 3: Handle CAPTCHA manually for now
+        print("🔤 CAPTCHA Section:")
+        print("=" * 50)
+
+        captcha_input = driver.find_element(By.ID, "captcha")
+
         if captcha_solver:
-            print("🔤 Solving CAPTCHA...")
+            # Get CAPTCHA text from the solver function
             captcha_text = captcha_solver(driver)
-            captcha_input = driver.find_element(By.ID, "captcha")
+            print(f"✅ Using provided CAPTCHA: {captcha_text}")
             captcha_input.send_keys(captcha_text)
         else:
-            print("⚠️  No CAPTCHA solver provided, attempting without CAPTCHA")
-        
+            # Manual mode
+            print("⏸️  Please look at the browser and solve the CAPTCHA")
+            manual_captcha = input("Enter CAPTCHA text and press Enter: ")
+            captcha_input.send_keys(manual_captcha)
+            print(f"✅ Entered CAPTCHA: {manual_captcha}")
         # Submit login
         submit_btn = driver.find_element(By.NAME, "submit")
         submit_btn.click()
