@@ -11,9 +11,9 @@ function LoginForm({ onLoginSuccess }) {
   const [password, setPassword] = useState(""); // Student password
   const [captchaText, setCaptchaText] = useState(""); // User's CAPTCHA input
   const [captchaImage, setCaptchaImage] = useState(null); // CAPTCHA image from backend
+  const [sessionId, setSessionId] = useState(null);
   const [loading, setLoading] = useState(false); // Is something loading?
   const [error, setError] = useState(""); // Error message to show
-
   // FUNCTION 1: Get CAPTCHA when user clicks button
   const handleGetCaptcha = async () => {
     // Validate roll number first
@@ -32,6 +32,7 @@ function LoginForm({ onLoginSuccess }) {
       if (response.success) {
         // Store the CAPTCHA image in state
         setCaptchaImage(response.captcha_base64);
+        setSessionId(response.session_id); // ← ADD THIS LINE
         setError("");
       } else {
         setError(response.error || "Failed to fetch CAPTCHA");
@@ -59,6 +60,7 @@ function LoginForm({ onLoginSuccess }) {
     try {
       // Call API to get attendance
       const response = await fetchAttendance({
+        sessionId: sessionId, // ← ADD THIS LINE
         rollNo,
         password,
         captcha: captchaText,

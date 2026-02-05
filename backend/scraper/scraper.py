@@ -243,3 +243,140 @@ def scrape_attendance(roll_no, password, year_idx=0, semester_idx=0, captcha_sol
     finally:
         if driver:
             driver.quit()
+def scrape_attendance_with_driver(driver, password, captcha, year_idx=0, semester_idx=0):
+    """
+    Continue scraping with existing driver session
+    Driver is already on login page with roll number filled
+    """
+    try:
+        print("🔐 Continuing login with existing session...")
+        
+        wait = WebDriverWait(driver, 10)
+        
+        # We're already in the login frame with roll number filled
+        # Just need to fill password and CAPTCHA
+        
+        pwd_input = driver.find_element(By.ID, "pwd")
+        pwd_input.send_keys(password)
+        
+        captcha_input = driver.find_element(By.ID, "captcha")
+        captcha_input.send_keys(captcha)
+        
+        # Submit
+        submit_btn = driver.find_element(By.NAME, "submit")
+        submit_btn.click()
+        time.sleep(5)
+        
+        # Check login success
+        driver.switch_to.default_content()
+        if "logout" not in driver.page_source.lower():
+            return {
+                'success': False,
+                'error': 'Login failed - Invalid credentials or CAPTCHA'
+            }
+        
+        print("✅ Login successful!")
+        
+        # Navigate to Attendance
+        print("📚 Navigating to Attendance...")
+        
+        if not find_and_click_link(driver, ['Academics']):
+            return {'success': False, 'error': 'Could not find Academics link'}
+        time.sleep(3)
+        
+        find_and_expand_tree_node(driver, ['Attendance'])
+        time.sleep(2)
+        
+        if not find_and_click_link(driver, ['My Attendance'], exact_match=True):
+            return {'success': False, 'error': 'Could not find My Attendance link'}
+        
+        time.sleep(5)
+        
+        # Select Year and Semester
+        print("📅 Selecting Year and Semester...")
+        
+        year_selected = False
+        semester_selected = False
+        
+        for frame_name in ['data', 'contents', 'bottom', 'top']:
+            try:
+                driver.switch_to.default_content()
+                driver.switch_to.frame(frame_name)
+                
+                selects = driver.find_elements(By.TAG_NAME, "select")
+                
+                for select_elem in selects:
+                    select = Select(select_elem)
+                    select_name = select_elem.get_attribute("name") or select_elem.get_attribute("id") or ""
+                    
+                    if not year_selected and any(keyword in select_name.lower() for keyword in ['year', 'yr']):
+                        select.select_by_index(year_idx)
+                        print(f"✅ Selected Year")
+                        year_selected = True
+                        time.sleep(1)
+                    
+                    elif not semester_selected and any(keyword in select_name.lower() for keyword in ['sem', 'semester']):
+                        select.select_by_index(semester_idx)
+                        print(f"✅ Selected Semester")
+                        semester_selected = True
+                        time.sleep(1)
+                
+                if year_selected and semester_selected:
+                    buttons = driver.find_elements(By.TAG_NAME, "input") + driver.find_elements(By.TAG_NAME, "button")
+                    
+                    for button in buttons:
+                        button_type = button.get_attribute("type") or ""
+                        button_value = (button.get_attribute("value") or button.text or "").lower()
+                        button_name = (button.get_attribute("name") or "").lower()
+                        
+                        if 'pdf' in button_value or 'download' in button_value:
+                            continue
+                        
+                        if (button_type.lower() == "submit" and button_name == "submit") or button_value == "submit":
+                            button.click()
+                            print("✅ Clicked Submit")
+                            time.sleep(5)
+                            break
+                    break
+                    
+            except Exception as e:
+                continue
+        
+        # Extract attendance
+        print("📊 Extracting attendance data...")
+        
+        all_attendance = []
+        
+        for frame_name in ['data', 'contents', 'bottom', 'top']:
+            try:
+                driver.switch_to.default_content()
+                driver.switch_to.frame(frame_name)
+                
+                html = driver.page_source
+                
+                if 'attend' in html.lower() and len(html) > 500:
+                    attendance_rows = extract_attendance_table_enhanced(html, debug=False)
+                    
+                    if attendance_rows:
+                        all_attendance.extend(attendance_rows)
+                        print(f"✅ Extracted {len(attendance_rows)} subjects from {frame_name}")
+                    
+            except Exception as e:
+                continue
+        
+        if not all_attendance:
+            return {'success': False, 'error': 'No attendance data found'}
+        
+        print(f"🎉 Successfully extracted {len(all_attendance)} subjects!")
+        
+        return {
+            'success': True,
+            'data': all_attendance,
+            'total_subjects': len(all_attendance)
+        }
+        
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return {'success': False, 'error': str(e)}
