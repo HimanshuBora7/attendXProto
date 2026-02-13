@@ -1,208 +1,129 @@
 """
-Scraper that continues with existing driver session
-Enhanced version with robust frame handling
+Final working scraper - combines all successful fixes
 """
 import time
 import os
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import NoSuchElementException, TimeoutException, StaleElementReferenceException
+from selenium.webdriver.common.action_chains import ActionChains
 from .utils import find_and_expand_tree_node, find_and_click_link, extract_attendance_table_enhanced
 
 
 def scrape_attendance_with_driver(driver, password, captcha, year_idx=0, semester_idx=0):
     """
     Continue scraping with existing driver session
-    
-    IMPORTANT: Driver should already be on login page with roll number filled
-    
-    Args:
-        driver: Existing Selenium WebDriver instance
-        password (str): Student password
-        captcha (str): CAPTCHA text to submit
-        year_idx (int): Year dropdown index (default 0)
-        semester_idx (int): Semester dropdown index (default 0)
-    
-    Returns:
-        dict: {
-            'success': bool,
-            'data': list of attendance records,
-            'error': str (if failed)
-        }
     """
     try:
-        print("🔐 Continuing login with existing session...")
-        print(f"📍 Current URL: {driver.current_url}")
+        print("🔐 Continuing login...")
         
-        wait = WebDriverWait(driver, 15)
+        wait = WebDriverWait(driver, 20)
         
-        # CRITICAL: Ensure we're in the login frame
-        # The driver might have switched out, so let's ensure we're in the right place
+        # STEP 1: Ensure in login frame
         try:
-            print("🔄 Ensuring we're in the login frame...")
+            print("🔄 Switching to login frame...")
             driver.switch_to.default_content()
-            
-            # Wait for frame to be available and switch to it
             wait.until(EC.frame_to_be_available_and_switch_to_it(0))
-            print("✅ Switched to login frame (frame 0)")
+            print("✅ In login frame")
             
-            # Verify we can see the login form
             uid_field = driver.find_element(By.ID, "uid")
-            print(f"✅ Found UID field with value: {uid_field.get_attribute('value')[:3]}***")
+            print(f"✅ UID: {uid_field.get_attribute('value')[:3]}***")
             
         except Exception as e:
-            print(f"⚠️ Frame switching issue: {e}")
-            return {
-                'success': False,
-                'error': f'Could not access login frame: {str(e)}'
-            }
+            return {'success': False, 'error': f'Frame error: {str(e)}'}
         
-        # STEP 1: Fill password
+        # STEP 2: Fill password
         try:
             print("📝 Filling password...")
-            
-            # Wait for password field to be present
             pwd_input = wait.until(EC.presence_of_element_located((By.ID, "pwd")))
             pwd_input.clear()
             time.sleep(0.5)
             pwd_input.send_keys(password)
+            time.sleep(0.5)
+            print(f"✅ Password entered ({len(password)} chars)")
             
-            # Verify password was entered
-            if pwd_input.get_attribute('value'):
-                print("✅ Password entered successfully")
-            else:
-                print("⚠️ Password field appears empty after entry")
-                
-        except TimeoutException:
-            return {
-                'success': False,
-                'error': 'Timeout: Could not find password field. Page may not have loaded.'
-            }
         except Exception as e:
-            return {
-                'success': False,
-                'error': f'Could not fill password field: {str(e)}'
-            }
+            return {'success': False, 'error': f'Password error: {str(e)}'}
         
-        # STEP 2: Fill CAPTCHA
+        # STEP 3: Fill CAPTCHA
         try:
             print(f"🔤 Filling CAPTCHA: {captcha}")
-            
-            # Wait for CAPTCHA field to be present
-            captcha_input = wait.until(EC.presence_of_element_located((By.ID, "captcha")))
+            captcha_input = driver.find_element(By.ID, "cap")
             captcha_input.clear()
             time.sleep(0.5)
             captcha_input.send_keys(captcha)
-            
-            # Verify CAPTCHA was entered
-            if captcha_input.get_attribute('value') == captcha:
-                print("✅ CAPTCHA entered and verified")
-            else:
-                print(f"⚠️ CAPTCHA mismatch. Expected: {captcha}, Got: {captcha_input.get_attribute('value')}")
+            time.sleep(0.5)
+            print("✅ CAPTCHA entered")
                 
-        except TimeoutException:
-            # Debug: Print page source to see what's there
-            print("🔍 DEBUG: Login frame HTML:")
-            print(driver.page_source[:500])
-            
-            return {
-                'success': False,
-                'error': 'Timeout: Could not find CAPTCHA field. The login page structure may have changed.'
-            }
         except Exception as e:
-            return {
-                'success': False,
-                'error': f'Could not fill CAPTCHA field: {str(e)}'
-            }
+            return {'success': False, 'error': f'CAPTCHA error: {str(e)}'}
         
-        # STEP 3: Submit login form
+        # STEP 4: Submit form
         try:
-            print("🚀 Submitting login form...")
-            submit_btn = wait.until(EC.element_to_be_clickable((By.NAME, "submit")))
-            
-            # Take screenshot before submit (for debugging)
-            try:
-                driver.save_screenshot("/tmp/before_submit.png")
-                print("📸 Saved screenshot: /tmp/before_submit.png")
-            except:
-                pass
-            
+            print("🚀 Submitting form...")
+            submit_btn = driver.find_element(By.NAME, "login")
             submit_btn.click()
-            print("✅ Clicked submit button")
-            time.sleep(5)  # Wait for login to process
+            print("✅ Submitted, waiting...")
+            time.sleep(6)
             
         except Exception as e:
-            return {
-                'success': False,
-                'error': f'Could not click submit button: {str(e)}'
-            }
+            return {'success': False, 'error': f'Submit error: {str(e)}'}
         
-        # STEP 4: Verify login success
+        # STEP 5: Verify login
         print("🔍 Verifying login...")
         driver.switch_to.default_content()
-        
-        # Wait a bit for page to load
         time.sleep(2)
         
-        page_source = driver.page_source.lower()
-        print(f"📄 Page source length: {len(page_source)} characters")
+        current_url = driver.current_url
+        print(f"📍 URL: {current_url}")
         
-        if "logout" not in page_source:
-            # Take screenshot of failed login
-            try:
-                driver.save_screenshot("/tmp/login_failed.png")
-                print("📸 Saved screenshot: /tmp/login_failed.png")
-            except:
-                pass
-            
-            # Try to find specific error message
-            error_msg = "Login failed - Invalid credentials or CAPTCHA"
-            
-            if "invalid" in page_source or "wrong" in page_source:
-                error_msg = "Invalid credentials or CAPTCHA"
-            elif "captcha" in page_source:
-                error_msg = "Incorrect CAPTCHA - Please try again"
-            elif "password" in page_source and "incorrect" in page_source:
-                error_msg = "Incorrect password"
-            
-            print(f"❌ Login failed: {error_msg}")
-            print(f"🔍 Page title: {driver.title}")
-            
-            return {
-                'success': False,
-                'error': error_msg
-            }
+        # Check if on student.htm (logged in page)
+        if "student.htm" in current_url:
+            print("✅ LOGIN SUCCESSFUL!")
+        else:
+            return {'success': False, 'error': 'Login failed - wrong page'}
         
-        print("✅ Login successful!")
-        
-        # STEP 5: Navigate to Attendance section
-        print("📚 Navigating to Attendance...")
-        
-        if not find_and_click_link(driver, ['Academics']):
-            return {
-                'success': False,
-                'error': 'Could not find Academics link'
-            }
+        # STEP 6: Navigate to My Activities
+        print("📚 Navigating to My Activities...")
         time.sleep(3)
         
-        # Expand Attendance tree node
-        print("🌳 Expanding Attendance tree node...")
+        # Find My Activities link
+        activities_found = False
+        for frame_name in ['top', 'contents', 'data', 'banner']:
+            try:
+                driver.switch_to.default_content()
+                driver.switch_to.frame(frame_name)
+                links = driver.find_elements(By.TAG_NAME, "a")
+                for link in links:
+                    if 'activit' in link.text.lower():
+                        print(f"✅ Found My Activities in '{frame_name}'")
+                        link.click()
+                        activities_found = True
+                        break
+                if activities_found:
+                    break
+            except:
+                continue
+        
+        if not activities_found:
+            return {'success': False, 'error': 'Could not find My Activities'}
+        
+        driver.switch_to.default_content()
+        time.sleep(3)
+        
+        # STEP 7: Navigate to Attendance
+        print("📖 Looking for Attendance...")
         find_and_expand_tree_node(driver, ['Attendance'])
         time.sleep(2)
         
-        # Click My Attendance
-        print("🎯 Clicking My Attendance...")
         if not find_and_click_link(driver, ['My Attendance'], exact_match=True):
-            return {
-                'success': False,
-                'error': 'Could not find My Attendance link'
-            }
+            return {'success': False, 'error': 'Could not find My Attendance'}
         
+        print("✅ Clicked My Attendance")
         time.sleep(5)
         
-        # STEP 6: Select Year and Semester
-        print("📅 Selecting Year and Semester...")
+        # STEP 8: Select Year and Semester
+        print(f"📅 Selecting Year (index {year_idx}) and Semester (index {semester_idx})...")
         
         year_selected = False
         semester_selected = False
@@ -214,87 +135,140 @@ def scrape_attendance_with_driver(driver, password, captcha, year_idx=0, semeste
                 driver.switch_to.frame(frame_name)
                 
                 selects = driver.find_elements(By.TAG_NAME, "select")
+                print(f"🔍 Found {len(selects)} dropdowns in '{frame_name}' frame")
                 
-                for select_elem in selects:
+                for idx, select_elem in enumerate(selects):
                     try:
                         select = Select(select_elem)
                         select_name = (select_elem.get_attribute("name") or 
                                      select_elem.get_attribute("id") or "").lower()
                         
-                        # Select Year
-                        if not year_selected and any(keyword in select_name for keyword in ['year', 'yr']):
-                            if year_idx < len(select.options):
-                                select.select_by_index(year_idx)
-                                print(f"✅ Selected Year: {select.options[year_idx].text}")
-                                year_selected = True
-                                time.sleep(1)
-                            else:
-                                print(f"⚠️  Year index {year_idx} out of range (max: {len(select.options)-1})")
+                        print(f"  Dropdown {idx}: name='{select_name}', options={len(select.options)}")
                         
-                        # Select Semester
-                        elif not semester_selected and any(keyword in select_name for keyword in ['sem', 'semester']):
-                            if semester_idx < len(select.options):
-                                select.select_by_index(semester_idx)
-                                print(f"✅ Selected Semester: {select.options[semester_idx].text}")
-                                semester_selected = True
-                                time.sleep(1)
-                            else:
-                                print(f"⚠️  Semester index {semester_idx} out of range (max: {len(select.options)-1})")
+                        # Try to select Year - check multiple possible names
+                        if not year_selected:
+                            # Check if this dropdown might be the year dropdown
+                            if any(k in select_name for k in ['year', 'yr', 'academic', 'session']):
+                                # IMPORTANT: Check if first option is blank/placeholder
+                                first_option_value = select.options[0].get_attribute('value') if len(select.options) > 0 else ""
                                 
+                                # If first option is blank, adjust index
+                                actual_year_idx = year_idx
+                                if first_option_value == "" or "select" in select.options[0].text.lower():
+                                    actual_year_idx = year_idx + 1  # Skip the blank option
+                                    print(f"  📌 First option is blank, using index {actual_year_idx} instead of {year_idx}")
+                                
+                                if actual_year_idx < len(select.options):
+                                    select.select_by_index(actual_year_idx)
+                                    print(f"✅ Year selected (index {actual_year_idx}): {select.options[actual_year_idx].text}")
+                                    year_selected = True
+                                    time.sleep(1)
+                                else:
+                                    print(f"⚠️  Year index {actual_year_idx} out of range (max: {len(select.options)-1})")
+                            # If first dropdown and still no year, assume it's year
+                            elif idx == 0 and not year_selected and not semester_selected:
+                                # Check for blank first option
+                                first_option_value = select.options[0].get_attribute('value') if len(select.options) > 0 else ""
+                                actual_year_idx = year_idx
+                                if first_option_value == "" or "select" in select.options[0].text.lower():
+                                    actual_year_idx = year_idx + 1
+                                    print(f"  📌 First option is blank, using index {actual_year_idx}")
+                                
+                                if actual_year_idx < len(select.options):
+                                    select.select_by_index(actual_year_idx)
+                                    print(f"✅ Year selected (dropdown 0, index {actual_year_idx}): {select.options[actual_year_idx].text}")
+                                    year_selected = True
+                                    time.sleep(1)
+                        
+                        # Try to select Semester
+                        elif not semester_selected:
+                            # Check if this dropdown might be the semester dropdown
+                            if any(k in select_name for k in ['sem', 'semester', 'term', 'part']):
+                                # Check if first option is blank
+                                first_option_value = select.options[0].get_attribute('value') if len(select.options) > 0 else ""
+                                actual_sem_idx = semester_idx
+                                if first_option_value == "" or "select" in select.options[0].text.lower():
+                                    actual_sem_idx = semester_idx + 1
+                                    print(f"  📌 First semester option is blank, using index {actual_sem_idx}")
+                                
+                                if actual_sem_idx < len(select.options):
+                                    select.select_by_index(actual_sem_idx)
+                                    print(f"✅ Semester selected (index {actual_sem_idx}): {select.options[actual_sem_idx].text}")
+                                    semester_selected = True
+                                    time.sleep(1)
+                            # If second dropdown and year already selected, assume it's semester
+                            elif year_selected and not semester_selected:
+                                # Check for blank first option
+                                first_option_value = select.options[0].get_attribute('value') if len(select.options) > 0 else ""
+                                actual_sem_idx = semester_idx
+                                if first_option_value == "" or "select" in select.options[0].text.lower():
+                                    actual_sem_idx = semester_idx + 1
+                                    print(f"  📌 First semester option is blank, using index {actual_sem_idx}")
+                                
+                                if actual_sem_idx < len(select.options):
+                                    select.select_by_index(actual_sem_idx)
+                                    print(f"✅ Semester selected (dropdown {idx}, index {actual_sem_idx}): {select.options[actual_sem_idx].text}")
+                                    semester_selected = True
+                                    time.sleep(1)
                     except Exception as e:
-                        print(f"⚠️  Error selecting dropdown: {e}")
+                        print(f"⚠️  Error with dropdown {idx}: {e}")
                         continue
                 
-                # If both selected, find and click submit
                 if year_selected and semester_selected:
+                    # Find submit button - SKIP PDF buttons!
+                    print("🔍 Looking for submit button...")
                     buttons = driver.find_elements(By.TAG_NAME, "input") + \
                              driver.find_elements(By.TAG_NAME, "button")
                     
                     for button in buttons:
                         try:
                             button_type = (button.get_attribute("type") or "").lower()
-                            button_value = (button.get_attribute("value") or button.text or "").lower()
+                            button_value = (button.get_attribute("value") or "").lower()
                             button_name = (button.get_attribute("name") or "").lower()
                             
-                            # Skip PDF/download buttons
-                            if any(skip in button_value for skip in ['pdf', 'download', 'export']):
-                                continue
-                            if 'mpdfx' in button_name:
+                            # CRITICAL: Skip PDF/Download buttons
+                            if any(skip in button_value for skip in ['pdf', 'download', 'export', 'print']):
+                                print(f"  ⏭️  Skipping: {button_value}")
                                 continue
                             
-                            # Click submit button
-                            if (button_type == "submit" and button_name == "submit") or \
-                               button_value == "submit":
-                                print(f"✅ Clicking Submit button...")
+                            if any(skip in button_name for skip in ['pdf', 'mpdfx', 'download']):
+                                print(f"  ⏭️  Skipping: name={button_name}")
+                                continue
+                            
+                            # Click ONLY submit buttons
+                            if button_type == "submit" and "submit" in button_name:
+                                print(f"✅ Clicking submit button: name='{button_name}'")
                                 button.click()
                                 submit_clicked = True
                                 time.sleep(5)
                                 break
                         except Exception as e:
-                            print(f"⚠️  Error clicking button: {e}")
+                            print(f"⚠️  Error with button: {e}")
                             continue
                     
                     if submit_clicked:
                         break
-                    
+                    else:
+                        print(f"⚠️  No valid submit button found in '{frame_name}'")
+                        
             except Exception as e:
                 print(f"⚠️  Error in frame '{frame_name}': {e}")
                 continue
         
-        if not year_selected or not semester_selected:
-            return {
-                'success': False,
-                'error': 'Could not find Year/Semester dropdowns'
-            }
-        
+        if not year_selected:
+            print("❌ Year not selected!")
+        if not semester_selected:
+            print("❌ Semester not selected!")
         if not submit_clicked:
-            print("⚠️  Warning: Submit button may not have been clicked")
+            print("⚠️  WARNING: Submit button was not clicked!")
+            
+        if not year_selected or not semester_selected:
+            return {'success': False, 'error': 'Could not select year/semester'}
         
-        # STEP 7: Extract attendance data
+        # STEP 9: Extract attendance
         print("📊 Extracting attendance data...")
         
         all_attendance = []
-        frames_checked = []
         
         for frame_name in ['data', 'contents', 'bottom', 'top']:
             try:
@@ -302,47 +276,24 @@ def scrape_attendance_with_driver(driver, password, captcha, year_idx=0, semeste
                 driver.switch_to.frame(frame_name)
                 
                 html = driver.page_source
-                frames_checked.append(frame_name)
                 
-                # Check if frame contains attendance data
                 if 'attend' in html.lower() and len(html) > 500:
-                    print(f"✅ Found attendance data in '{frame_name}' frame")
+                    print(f"✅ Found data in '{frame_name}'")
                     
-                    # Optional: Save HTML for debugging
-                    try:
-                        data_dir = os.path.join(os.path.dirname(__file__), '..', 'data')
-                        os.makedirs(data_dir, exist_ok=True)
-                        
-                        html_file = os.path.join(data_dir, f"attendance_{frame_name}.html")
-                        with open(html_file, "w", encoding="utf-8") as f:
-                            f.write(html)
-                        print(f"💾 Saved HTML to {html_file}")
-                    except Exception as e:
-                        print(f"⚠️  Could not save HTML: {e}")
-                    
-                    # Parse attendance table
                     attendance_rows = extract_attendance_table_enhanced(html, debug=False)
                     
                     if attendance_rows:
                         all_attendance.extend(attendance_rows)
-                        print(f"✅ Extracted {len(attendance_rows)} subjects from '{frame_name}'")
-                    else:
-                        print(f"⚠️  No attendance rows extracted from '{frame_name}'")
-                    
-            except Exception as e:
-                print(f"⚠️  Error processing frame '{frame_name}': {e}")
+                        print(f"✅ Extracted {len(attendance_rows)} subjects")
+            except:
                 continue
         
-        # Switch back to default content
         driver.switch_to.default_content()
         
         if not all_attendance:
-            return {
-                'success': False,
-                'error': f'No attendance data found. Checked frames: {frames_checked}'
-            }
+            return {'success': False, 'error': 'No attendance data found'}
         
-        print(f"🎉 Successfully extracted {len(all_attendance)} subjects!")
+        print(f"🎉 Success! {len(all_attendance)} subjects")
         
         return {
             'success': True,
@@ -351,18 +302,8 @@ def scrape_attendance_with_driver(driver, password, captcha, year_idx=0, semeste
         }
         
     except Exception as e:
-        print(f"❌ Error during scraping: {e}")
+        print(f"❌ Error: {e}")
         import traceback
         traceback.print_exc()
         
-        # Try to save debug screenshot
-        try:
-            driver.save_screenshot("/tmp/error_screenshot.png")
-            print("📸 Saved error screenshot: /tmp/error_screenshot.png")
-        except:
-            pass
-        
-        return {
-            'success': False,
-            'error': f'Scraping error: {str(e)}'
-        }
+        return {'success': False, 'error': f'Error: {str(e)}'}

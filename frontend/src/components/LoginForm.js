@@ -5,15 +5,16 @@ import { fetchCaptcha, fetchAttendance } from "../services/api";
 
 function LoginForm({ onLoginSuccess }) {
   // STATE - Data that can change
-  // Think of state as variables that trigger re-render when changed
-
-  const [rollNo, setRollNo] = useState(""); // Student roll number
-  const [password, setPassword] = useState(""); // Student password
-  const [captchaText, setCaptchaText] = useState(""); // User's CAPTCHA input
-  const [captchaImage, setCaptchaImage] = useState(null); // CAPTCHA image from backend
+  const [rollNo, setRollNo] = useState("");
+  const [password, setPassword] = useState("");
+  const [captchaText, setCaptchaText] = useState("");
+  const [captchaImage, setCaptchaImage] = useState(null);
   const [sessionId, setSessionId] = useState(null);
-  const [loading, setLoading] = useState(false); // Is something loading?
-  const [error, setError] = useState(""); // Error message to show
+  const [year, setYear] = useState(0);
+  const [semester, setSemester] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
   // FUNCTION 1: Get CAPTCHA when user clicks button
   const handleGetCaptcha = async () => {
     // Validate roll number first
@@ -22,17 +23,15 @@ function LoginForm({ onLoginSuccess }) {
       return;
     }
 
-    setLoading(true); // Show loading state
-    setError(""); // Clear any previous errors
+    setLoading(true);
+    setError("");
 
     try {
-      // Call our API service
       const response = await fetchCaptcha(rollNo);
 
       if (response.success) {
-        // Store the CAPTCHA image in state
         setCaptchaImage(response.captcha_base64);
-        setSessionId(response.session_id); // ← ADD THIS LINE
+        setSessionId(response.session_id);
         setError("");
       } else {
         setError(response.error || "Failed to fetch CAPTCHA");
@@ -40,13 +39,13 @@ function LoginForm({ onLoginSuccess }) {
     } catch (err) {
       setError("Network error. Is the backend running?");
     } finally {
-      setLoading(false); // Stop loading
+      setLoading(false);
     }
   };
 
   // FUNCTION 2: Submit the form
   const handleSubmit = async (e) => {
-    e.preventDefault(); // Prevent page reload on form submit
+    e.preventDefault();
 
     // Validate all fields
     if (!rollNo || !password || !captchaText) {
@@ -58,14 +57,13 @@ function LoginForm({ onLoginSuccess }) {
     setError("");
 
     try {
-      // Call API to get attendance
       const response = await fetchAttendance({
-        sessionId: sessionId, // ← ADD THIS LINE
+        sessionId: sessionId,
         rollNo,
         password,
         captcha: captchaText,
-        year: 0,
-        semester: 0,
+        year: year,
+        semester: semester,
       });
 
       if (response.success) {
@@ -81,7 +79,7 @@ function LoginForm({ onLoginSuccess }) {
     }
   };
 
-  // RENDER - What the user sees
+  // RENDER
   return (
     <div style={styles.container}>
       <h1>🎓 Attendance Dashboard</h1>
@@ -99,6 +97,7 @@ function LoginForm({ onLoginSuccess }) {
             onChange={(e) => setRollNo(e.target.value)}
             placeholder="Enter your roll number"
             style={styles.input}
+            disabled={loading}
           />
         </div>
 
@@ -111,6 +110,7 @@ function LoginForm({ onLoginSuccess }) {
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Enter your password"
             style={styles.input}
+            disabled={loading}
           />
         </div>
 
@@ -118,8 +118,12 @@ function LoginForm({ onLoginSuccess }) {
         <button
           type="button"
           onClick={handleGetCaptcha}
-          disabled={loading}
-          style={styles.captchaButton}
+          disabled={loading || !rollNo}
+          style={{
+            ...styles.captchaButton,
+            opacity: loading || !rollNo ? 0.6 : 1,
+            cursor: loading || !rollNo ? "not-allowed" : "pointer",
+          }}
         >
           {loading ? "Loading..." : "🔄 Get CAPTCHA"}
         </button>
@@ -141,7 +145,51 @@ function LoginForm({ onLoginSuccess }) {
               onChange={(e) => setCaptchaText(e.target.value)}
               placeholder="Type the text above"
               style={styles.input}
+              disabled={loading}
             />
+          </div>
+        )}
+
+        {/* Year Selection */}
+        {captchaImage && (
+          <div style={styles.inputGroup}>
+            <label>Academic Year:</label>
+            <select
+              value={year}
+              onChange={(e) => setYear(parseInt(e.target.value))}
+              style={styles.select}
+              disabled={loading}
+            >
+              <option value={0}>2024-25 (Current Year)</option>
+              <option value={1}>2023-24</option>
+              <option value={2}>2022-23</option>
+              <option value={3}>2021-22</option>
+            </select>
+            <small style={styles.smallText}>
+              Select your current academic year
+            </small>
+          </div>
+        )}
+
+        {/* Semester Selection */}
+        {captchaImage && (
+          <div style={styles.inputGroup}>
+            <label>Semester:</label>
+            <select
+              value={semester}
+              onChange={(e) => setSemester(parseInt(e.target.value))}
+              style={styles.select}
+              disabled={loading}
+            >
+              <option value={0}>Semester 1</option>
+              <option value={1}>Semester 2</option>
+              <option value={2}>Semester 3</option>
+              <option value={3}>Semester 4</option>
+              <option value={4}>Semester 5</option>
+              <option value={5}>Semester 6</option>
+              <option value={6}>Semester 7</option>
+              <option value={7}>Semester 8</option>
+            </select>
           </div>
         )}
 
@@ -149,16 +197,27 @@ function LoginForm({ onLoginSuccess }) {
         <button
           type="submit"
           disabled={loading || !captchaImage}
-          style={styles.submitButton}
+          style={{
+            ...styles.submitButton,
+            opacity: loading || !captchaImage ? 0.6 : 1,
+            cursor: loading || !captchaImage ? "not-allowed" : "pointer",
+          }}
         >
           {loading ? "Loading..." : "📊 Get Attendance"}
         </button>
+
+        {/* Helper text */}
+        {captchaImage && (
+          <div style={styles.helperText}>
+            <p>💡 Select your current academic year and semester</p>
+          </div>
+        )}
       </form>
     </div>
   );
 }
 
-// STYLES - Inline CSS for this component
+// STYLES
 const styles = {
   container: {
     maxWidth: "500px",
@@ -167,6 +226,7 @@ const styles = {
     border: "1px solid #ddd",
     borderRadius: "8px",
     backgroundColor: "#f9f9f9",
+    boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
   },
   form: {
     display: "flex",
@@ -183,6 +243,14 @@ const styles = {
     border: "1px solid #ccc",
     borderRadius: "4px",
   },
+  select: {
+    padding: "10px",
+    fontSize: "16px",
+    border: "1px solid #ccc",
+    borderRadius: "4px",
+    backgroundColor: "white",
+    cursor: "pointer",
+  },
   captchaButton: {
     padding: "10px",
     fontSize: "16px",
@@ -191,6 +259,7 @@ const styles = {
     border: "none",
     borderRadius: "4px",
     cursor: "pointer",
+    transition: "background-color 0.3s",
   },
   captchaContainer: {
     textAlign: "center",
@@ -201,6 +270,7 @@ const styles = {
   },
   captchaImage: {
     maxWidth: "100%",
+    height: "auto",
   },
   submitButton: {
     padding: "12px",
@@ -210,6 +280,8 @@ const styles = {
     border: "none",
     borderRadius: "4px",
     cursor: "pointer",
+    fontWeight: "bold",
+    transition: "background-color 0.3s",
   },
   error: {
     padding: "10px",
@@ -217,6 +289,18 @@ const styles = {
     color: "#721c24",
     borderRadius: "4px",
     marginBottom: "15px",
+    border: "1px solid #f5c6cb",
+  },
+  helperText: {
+    fontSize: "14px",
+    color: "#666",
+    textAlign: "center",
+    marginTop: "-5px",
+  },
+  smallText: {
+    fontSize: "12px",
+    color: "#888",
+    marginTop: "4px",
   },
 };
 
