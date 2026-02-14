@@ -128,13 +128,40 @@ def extract_attendance_table_enhanced(html, debug=False):
     
     attendance_data = []
     
+    # First, extract subject names mapping from the HTML
+    # Look for pattern: SUBCODE-Subject Name in <td colspan> or <b> tags
+    subject_names_map = {}
+    for table in tables:
+        # Look for td with colspan or bold tags containing subject names
+        name_cells = table.find_all('td', colspan=True)
+        for cell in name_cells:
+            # Get text but preserve line breaks
+            text_content = cell.decode_contents()
+            
+            # Split by <br> tags and newlines
+            lines = re.split(r'<br\s*/?>', text_content, flags=re.IGNORECASE)
+            
+            for line in lines:
+                # Remove HTML tags and clean up
+                clean_line = re.sub(r'<[^>]+>', '', line).strip()
+                
+                # Match pattern: SUBCODE-Subject Name
+                # Pattern: 2-5 uppercase letters + 3-4 digits
+                match = re.match(r'^([A-Z]{2,5}\d{3,4})\s*-\s*(.+)$', clean_line)
+                if match:
+                    code = match.group(1).strip()
+                    name = match.group(2).strip()
+                    subject_names_map[code] = name
+                    if debug:
+                        print(f"📚 Mapped: {code} -> {name}")
+    
     for table_idx, table in enumerate(tables):
         if debug:
             print(f"\n--- Analyzing Table {table_idx + 1} ---")
         
         rows = table.find_all('tr')
         
-        # Find header row with subject codes (looks for pattern like "ITITC601")
+        # Find header row with subject codes
         subject_codes = []
         header_row_idx = -1
         
@@ -142,9 +169,14 @@ def extract_attendance_table_enhanced(html, debug=False):
             cells = row.find_all(['td', 'th'])
             cell_texts = [cell.get_text(strip=True) for cell in cells]
             
-            # Look for row with subject codes
+            # Debug: Print first few rows
+            if debug and row_idx < 3:
+                print(f"  Row {row_idx}: {cell_texts}")
+            
+            # Look for row with subject codes (pattern: ITITC601, DNCS0603, etc.)
+            # Pattern: 2-5 uppercase letters + 3-4 digits
             has_subject_codes = any(
-                bool(re.match(r'^[A-Z]{2,4}\d{4}$', text)) 
+                bool(re.match(r'^[A-Z]{2,5}\d{3,4}$', text)) 
                 for text in cell_texts
             )
             
@@ -152,16 +184,16 @@ def extract_attendance_table_enhanced(html, debug=False):
                 header_row_idx = row_idx
                 # Extract subject codes (skip first column which is usually "Days")
                 for cell_text in cell_texts[1:]:
-                    if re.match(r'^[A-Z]{2,4}\d{4}$', cell_text):
+                    if re.match(r'^[A-Z]{2,5}\d{3,4}$', cell_text):
                         subject_codes.append(cell_text)
                 
                 if debug:
-                    print(f"✅ Found subject codes: {subject_codes}")
+                    print(f"✅ Found subject codes at row {row_idx}: {subject_codes}")
                 break
         
         if not subject_codes:
             if debug:
-                print("⚠️ No subject codes found")
+                print("⚠️ No subject codes found in this table")
             continue
         
         # Now find the "Overall" rows
@@ -178,19 +210,27 @@ def extract_attendance_table_enhanced(html, debug=False):
                 
             first_cell = cells[0].get_text(strip=True).lower()
             
-            if 'overall class' in first_cell or 'overall' in first_cell and 'class' in first_cell:
+            if 'overall class' in first_cell or ('overall' in first_cell and 'class' in first_cell):
                 overall_class_row = [cell.get_text(strip=True) for cell in cells]
+                if debug:
+                    print(f"✅ Found 'Overall Class' row")
             elif 'overall' in first_cell and 'absent' in first_cell:
                 overall_absent_row = [cell.get_text(strip=True) for cell in cells]
+                if debug:
+                    print(f"✅ Found 'Overall Absent' row")
             elif 'overall' in first_cell and 'present' in first_cell:
                 overall_present_row = [cell.get_text(strip=True) for cell in cells]
-            elif 'overall' in first_cell and '%' in first_cell or 'overall (%)' in first_cell:
+                if debug:
+                    print(f"✅ Found 'Overall Present' row")
+            elif ('overall' in first_cell and '%' in first_cell) or 'overall (%)' in first_cell:
                 overall_percent_row = [cell.get_text(strip=True) for cell in cells]
+                if debug:
+                    print(f"✅ Found 'Overall (%)' row")
         
         # Extract data for each subject
         if overall_class_row and overall_absent_row and overall_present_row:
             if debug:
-                print(f"✅ Found overall rows")
+                print(f"\n✅ Extracting attendance data...")
             
             for idx, subject_code in enumerate(subject_codes):
                 try:
@@ -201,7 +241,7 @@ def extract_attendance_table_enhanced(html, debug=False):
                     absent = int(overall_absent_row[cell_idx]) if cell_idx < len(overall_absent_row) else 0
                     present = int(overall_present_row[cell_idx]) if cell_idx < len(overall_present_row) else 0
                     
-                    # Get percentage if available
+                    # Get percentage - prefer from percent row if available
                     if overall_percent_row and cell_idx < len(overall_percent_row):
                         percent_str = overall_percent_row[cell_idx].replace('%', '').strip()
                         try:
@@ -211,9 +251,12 @@ def extract_attendance_table_enhanced(html, debug=False):
                     else:
                         percentage = round((present / total_classes * 100), 2) if total_classes > 0 else 0
                     
+                    # Get subject name from map, fallback to code
+                    subject_name = subject_names_map.get(subject_code, subject_code)
+                    
                     attendance_data.append({
                         'Subject Code': subject_code,
-                        'Subject Name': subject_code,  # We don't have names in this format
+                        'Subject Name': subject_name,
                         'Classes Present': present,
                         'Classes Absent': absent,
                         'Total Classes': total_classes,
@@ -221,7 +264,7 @@ def extract_attendance_table_enhanced(html, debug=False):
                     })
                     
                     if debug:
-                        print(f"  {subject_code}: {present}/{total_classes} ({percentage}%)")
+                        print(f"  {subject_code}: {present}/{total_classes} ({percentage}%) - {subject_name}")
                 
                 except (ValueError, IndexError) as e:
                     if debug:
@@ -229,6 +272,6 @@ def extract_attendance_table_enhanced(html, debug=False):
                     continue
     
     if debug:
-        print(f"\n✅ Extracted {len(attendance_data)} subject records")
+        print(f"\n✅ Total extracted: {len(attendance_data)} subjects")
     
     return attendance_data
