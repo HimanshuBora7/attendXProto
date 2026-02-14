@@ -280,12 +280,12 @@ def scrape_attendance_with_driver(driver, password, captcha, year_idx=0, semeste
                 if 'attend' in html.lower() and len(html) > 500:
                     print(f"✅ Found data in '{frame_name}'")
                     
-                    # Enable debug to see what's being parsed
-                    attendance_rows = extract_attendance_table_enhanced(html, debug=True)
+                    # Production mode - debug disabled
+                    attendance_rows = extract_attendance_table_enhanced(html, debug=False)
                     
                     if attendance_rows:
                         all_attendance.extend(attendance_rows)
-                        print(f"✅ Added {len(attendance_rows)} subjects from this frame")
+                        print(f"✅ Extracted {len(attendance_rows)} subjects")
             except:
                 continue
         
